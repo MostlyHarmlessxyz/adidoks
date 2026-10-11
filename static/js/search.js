@@ -69,11 +69,33 @@ Source:
 */
 (function(){
   var index = elasticlunr.Index.load(window.searchIndex);
+  var cjkIndex = elasticlunr(function () {
+    this.setRef(window.searchIndex.ref);
+    this.addField('cjkTitle');
+    this.addField('cjkBody');
+  });
+
+  // Elasticlunr 0.9's trimmer removes CJK characters. Keep its English index
+  // intact and add encoded CJK bigrams to a small companion index.
+  Object.keys(index.documentStore.docs).forEach(function (ref) {
+    var doc = index.documentStore.getDoc(ref);
+    var cjkDoc = {};
+    cjkDoc[window.searchIndex.ref] = doc[window.searchIndex.ref];
+    cjkDoc.cjkTitle = cjkSearchText(doc.title, true);
+    cjkDoc.cjkBody = cjkSearchText(doc.body, true);
+    cjkIndex.addDoc(cjkDoc);
+  });
+
   userinput.addEventListener('input', show_results, true);
   suggestions.addEventListener('click', accept_suggestion, true);
   
   function show_results(){
     var value = this.value.trim();
+    if (!value) {
+      suggestions.replaceChildren();
+      suggestions.classList.add('d-none');
+      return;
+    }
     var options = {
       bool: "OR",
       fields: {
@@ -82,33 +104,106 @@ Source:
       }
     };
     var results = index.search(value, options);
-
-    var entry, childs = suggestions.childNodes;
-    var i = 0, len = results.length;
-    var items = value.split(/\s+/);
-    suggestions.classList.remove('d-none');
-
-    results.forEach(function(page) {
-      if (page.doc.body !== '') {
-        entry = document.createElement('div');
-
-        entry.innerHTML = '<a href><span></span><span></span></a>';
-  
-        a = entry.querySelector('a'),
-        t = entry.querySelector('span:first-child'),
-        d = entry.querySelector('span:nth-child(2)');
-        a.href = page.ref;
-        t.textContent = page.doc.title;
-        d.innerHTML = makeTeaser(page.doc.body, items);
-  
-        suggestions.appendChild(entry);
-      }
+    var cjkQuery = cjkSearchText(value, false);
+    if (cjkQuery) {
+      var seen = Object.create(null);
+      results.forEach(function (page) { seen[page.ref] = true; });
+      var cjkOptions = {
+        bool: "OR",
+        fields: {
+          cjkTitle: {boost: 2},
+          cjkBody: {boost: 1},
+        }
+      };
+      cjkIndex.search(cjkQuery, cjkOptions).forEach(function (page) {
+        if (!seen[page.ref]) {
+          seen[page.ref] = true;
+          page.doc = index.documentStore.getDoc(page.ref);
+          results.push(page);
+        }
+      });
+    }
+    results = results.filter(function (page) {
+      return typeof page.doc.body === 'string' && page.doc.body !== '';
     });
 
-    while(childs.length > len){
-        suggestions.removeChild(childs[i])
-    }
+    suggestions.replaceChildren();
+    var entry;
+    var items = value.split(/\s+/);
 
+    results.forEach(function(page) {
+      entry = document.createElement('div');
+
+      entry.innerHTML = '<a href><span></span><span></span></a>';
+  
+      var a = entry.querySelector('a');
+      var t = entry.querySelector('span:first-child');
+      var d = entry.querySelector('span:nth-child(2)');
+      a.href = page.ref;
+      t.textContent = page.doc.title;
+      d.innerHTML = makeTeaser(page.doc.body, items);
+  
+      suggestions.appendChild(entry);
+    });
+
+    suggestions.classList.toggle('d-none', results.length === 0);
+
+  }
+
+  function cjkSearchText(value, includeUnigrams) {
+    var tokens = [];
+    cjkRuns(value).forEach(function (characters) {
+      if (includeUnigrams) {
+        characters.forEach(function (character) {
+          tokens.push(cjkToken([character]));
+        });
+      }
+      if (characters.length === 1) {
+        tokens.push(cjkToken(characters));
+      } else if (characters.length > 1) {
+        for (var i = 0; i < characters.length - 1; i++) {
+          tokens.push(cjkToken(characters.slice(i, i + 2)));
+        }
+      }
+    });
+    return tokens.join(' ');
+  }
+
+  function cjkRuns(value) {
+    var runs = [];
+    var run = [];
+    Array.from(String(value || '')).forEach(function (character) {
+      if (isCjk(character)) {
+        run.push(character);
+      } else if (run.length) {
+        runs.push(run);
+        run = [];
+      }
+    });
+    if (run.length) runs.push(run);
+    return runs;
+  }
+
+  function cjkToken(characters) {
+    return 'cjk_' + characters.map(function (character) {
+      return character.codePointAt(0).toString(16);
+    }).join('_');
+  }
+
+  function isCjk(character) {
+    var code = character.codePointAt(0);
+    return (code >= 0x3400 && code <= 0x4dbf)
+      || (code >= 0x4e00 && code <= 0x9fff)
+      || (code >= 0xf900 && code <= 0xfaff)
+      || (code >= 0x20000 && code <= 0x323af)
+      || (code >= 0x3040 && code <= 0x30ff)
+      || (code >= 0x31f0 && code <= 0x31ff)
+      || (code >= 0xff66 && code <= 0xff9d)
+      || (code >= 0x1100 && code <= 0x11ff)
+      || (code >= 0x3130 && code <= 0x318f)
+      || (code >= 0xac00 && code <= 0xd7af)
+      || (code >= 0xa960 && code <= 0xa97f)
+      || (code >= 0xd7b0 && code <= 0xd7ff);
   }
 
   function accept_suggestion(){
@@ -140,6 +235,23 @@ Source:
     var stemmedTerms = terms.map(function (w) {
       return elasticlunr.stemmer(w.toLowerCase());
     });
+    var cjkPhrase = cjkRuns(terms.join(' ')).filter(function (run) {
+      return run.length > 1;
+    })[0];
+    if (cjkPhrase) {
+      var bodyLower = body.toLowerCase();
+      var matchIndex = bodyLower.indexOf(cjkPhrase.join('').toLowerCase());
+      if (matchIndex !== -1) {
+        var bodyCharacters = Array.from(body);
+        var start = Array.from(bodyLower.slice(0, matchIndex)).length;
+        var phraseLength = cjkPhrase.length;
+        var snippetStart = Math.max(0, start - 24);
+        var snippetEnd = Math.min(bodyCharacters.length, start + phraseLength + 90);
+        return (snippetStart > 0 ? '…' : '')
+          + bodyCharacters.slice(snippetStart, snippetEnd).join('')
+          + (snippetEnd < bodyCharacters.length ? '…' : '');
+      }
+    }
     var termFound = false;
     var index = 0;
     var weighted = []; // contains elements of ["word", weight, index_in_document]

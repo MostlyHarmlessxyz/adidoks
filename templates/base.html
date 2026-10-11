@@ -10,7 +10,17 @@
 {% import 'macros/docs-navigation.html' as macros_navigation -%}
 {% import 'macros/docs-toc.html' as macros_toc -%}
 <!DOCTYPE html>
-<html lang="{{ config.extra.language_code | default(value="en-US") }}">
+{% set document_language = config.extra.language_code | default(value="en-US") %}
+{% if lang == "fi" %}
+  {% set document_language = "fi-FI" %}
+{% elif page is defined and page.extra.language_code is defined %}
+  {% set document_language = page.extra.language_code %}
+{% elif section is defined and section.extra.language_code is defined %}
+  {% set document_language = section.extra.language_code %}
+{% elif page is not defined and section is not defined %}
+  {% set document_language = "en-US" %}
+{% endif %}
+<html lang="{{ document_language }}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="x-ua-compatible" content="ie=edge">

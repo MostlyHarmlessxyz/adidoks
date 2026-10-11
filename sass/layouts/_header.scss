@@ -200,6 +200,9 @@
 
 .navbar .menu-icon {
   cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: inherit;
 
   /* display: inline-block; */
 
@@ -239,30 +242,31 @@
   top: -5px;
 }
 
-/* Add the icon and menu animations when the checkbox is clicked */
+/* Add the icon and menu animations when the menu button is activated */
 
-.navbar .menu-btn {
-  display: none;
+.navbar .menu-toggle:focus-visible {
+  outline: 2px solid $primary;
+  outline-offset: 2px;
 }
 
-.navbar .menu-btn:checked ~ .navbar-collapse {
+.navbar .menu-toggle[aria-expanded="true"] ~ .navbar-collapse {
   display: block;
   max-height: 100vh;
 }
 
-.navbar .menu-btn:checked ~ .menu-icon .navicon {
+.navbar .menu-toggle[aria-expanded="true"] .navicon {
   background: transparent;
 }
 
-.navbar .menu-btn:checked ~ .menu-icon .navicon::before {
+.navbar .menu-toggle[aria-expanded="true"] .navicon::before {
   transform: rotate(-45deg);
 }
 
-.navbar .menu-btn:checked ~ .menu-icon .navicon::after {
+.navbar .menu-toggle[aria-expanded="true"] .navicon::after {
   transform: rotate(45deg);
 }
 
-.navbar .menu-btn:checked ~ .menu-icon:not(.steps) .navicon::before,
-.navbar .menu-btn:checked ~ .menu-icon:not(.steps) .navicon::after {
+.navbar .menu-toggle[aria-expanded="true"] .navicon::before,
+.navbar .menu-toggle[aria-expanded="true"] .navicon::after {
   top: 0;
 }
